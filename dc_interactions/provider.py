@@ -25,9 +25,13 @@ class InteractionProvider:
         self.commands = []
         self.public_key = VerifyKey(bytes.fromhex(kwargs["public_key"]))
         self.token = kwargs["token"]
-        self.loop = kwargs.get("loop", asyncio.get_event_loop())
+        self._loop = kwargs.get("loop")
         self.session = kwargs.get("session", ClientSession(loop=self.loop))
         self.app_id = None
+
+    @property
+    def loop(self):
+        return self._loop or asyncio.get_event_loop()
 
     def find_command(self, data):
         base_command = iterable_get(self.commands, name=data.name)
@@ -116,7 +120,7 @@ class InteractionProvider:
         if not sanic_response:
             raise ModuleNotFoundError("Sanic is not installed")
 
-        raw_data = await request.body.decode("utf-8")
+        raw_data = request.body.decode("utf-8")
         signature = request.headers.get("x-signature-ed25519")
         timestamp = request.headers.get("x-signature-timestamp")
         if signature is None or timestamp is None:
@@ -128,8 +132,8 @@ class InteractionProvider:
             return sanic_response.empty(status=401)
 
         data = InteractionPayload(json.loads(raw_data))
-        resp = await self.interaction_receive(data)
-        return sanic_response.json(dict(resp))
+        resp = await self.interaction_received(data)
+        return sanic_response.json(resp.to_dict())
 
     async def make_request(self, method, path, data=None):
         # Should be replaced with an actual http client with proper ratelimiting
