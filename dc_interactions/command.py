@@ -41,6 +41,12 @@ def inspect_options(_callable, descriptions=None):
 
                 converter = snowflake_finder
 
+            if converter == CommandOptionType.INTEGER:
+                converter = int
+
+            if converter == CommandOptionType.BOOLEAN:
+                converter = bool
+
         elif converter == int:
             _type = CommandOptionType.INTEGER
 
