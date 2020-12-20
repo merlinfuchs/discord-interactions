@@ -273,14 +273,24 @@ class CommandContext:
     def acknowledge_with_source(self):
         return self.respond_with(InteractionResponse.acknowledge_with_source())
 
-    async def get_response(self):
-        pass
+    async def get_response(self, message_id="@original"):
+        return await self.provider.make_request(
+            "GET",
+            f"/webhooks/{self.provider.app_id}/{self.token}/messages/{message_id}"
+        )
 
-    async def edit_response(self):
-        pass
+    async def edit_response(self, *args, message_id="@original", **kwargs):
+        return await self.provider.make_request(
+            "GET",
+            f"/webhooks/{self.provider.app_id}/{self.token}/messages/{message_id}",
+            data=InteractionResponse.message(*args, **kwargs).data
+        )
 
-    async def delete_response(self):
-        pass
+    async def delete_response(self, message_id="@original"):
+        return await self.provider.make_request(
+            "DELETE",
+            f"/webhooks/{self.provider.app_id}/{self.token}/messages/{message_id}"
+        )
 
     @property
     def token(self):
