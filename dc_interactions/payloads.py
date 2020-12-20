@@ -6,7 +6,6 @@ __all__ = (
     "InteractionPayload",
     "CommandInteractionData",
     "CommandInteractionDataOption",
-    "Member"
 )
 
 
@@ -26,7 +25,7 @@ class InteractionPayload:
 
         if self.type == InteractionType.APPLICATION_COMMAND:
             self.data = CommandInteractionData(data["data"])
-            self.member = Member(data["member"])
+            self.member = data["member"]
 
 
 class CommandInteractionData:
@@ -41,10 +40,3 @@ class CommandInteractionDataOption:
         self.name = data["name"]
         self.value = data.get("value")
         self.options = [CommandInteractionDataOption(o) for o in data.get("options", [])]
-
-
-class Member:
-    def __init__(self, data):
-        user = data["user"]
-        self.id = user["id"]
-        self.name = user["username"]
