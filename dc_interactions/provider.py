@@ -70,13 +70,19 @@ class InteractionProvider:
     async def execute_command(self, command, payload, remaining_options):
         ctx = CommandContext(self, command, payload)
 
-        # parse options
-        # run converters
+        values = []
+        for option in remaining_options:
+            matching_option = iterable_get(command.options, name=option.name)
+            if matching_option is None:
+                return None  # Out of sync; ignore
+
+            values.append(matching_option.converter(option.value))
+
         # run checks
 
         async def _executor():
             try:
-                result = await command.callable(ctx, *[o.value for o in remaining_options])
+                result = await command.callable(ctx, *values)
                 if result is not None:
                     await ctx.respond_with(result)
 

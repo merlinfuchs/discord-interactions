@@ -1,5 +1,6 @@
 from enum import IntEnum
 import inspect
+import re
 
 from response import *
 
@@ -27,7 +28,12 @@ def inspect_options(_callable, descriptions=None):
         converter = p.annotation if p.annotation != inspect.Parameter.empty else str
         _type = CommandOptionType.STRING
         choices = []
-        if converter == int:
+        if isinstance(converter, CommandOptionType):
+            _type = converter
+            if converter in {CommandOptionType.ROLE, CommandOptionType.CHANNEL, CommandOptionType.USER}:
+                converter = lambda v: re.match(r"[0-9]+", v)[0]
+
+        elif converter == int:
             _type = CommandOptionType.INTEGER
 
         elif converter == bool:
@@ -135,6 +141,8 @@ class CommandOption:
         self.required = kwargs.get("required", True)
         self.choices = kwargs.get("choices", [])
 
+        self.converter = kwargs.get("converter", str)
+
     def to_payload(self):
         return {
             "type": self.type.value,
@@ -235,6 +243,35 @@ class CommandContext:
     def acknowledge_with_source(self):
         return self.respond_with(InteractionResponse.acknowledge_with_source())
 
+    async def get_response(self):
+        pass
+
+    async def edit_response(self):
+        pass
+
+    async def delete_response(self):
+        pass
+
     @property
     def token(self):
         return self.payload.token
+
+    @property
+    def guild_id(self):
+        return self.payload.guild_id
+
+    @property
+    def channel_id(self):
+        return self.payload.channel_id
+
+    @property
+    def data(self):
+        return self.payload.data
+
+    @property
+    def author(self):
+        return self.payload.member
+
+    @property
+    def member(self):
+        return self.payload.member
