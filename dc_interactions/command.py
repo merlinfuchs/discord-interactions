@@ -4,6 +4,7 @@ import re
 
 from response import *
 from errors import *
+from checks import *
 
 
 __all__ = (
@@ -76,11 +77,17 @@ def inspect_options(_callable, descriptions=None):
 
 
 def make_command(klass, cb, **kwargs):
+    checks = []
+    while isinstance(cb, Check):
+        checks.append(cb)
+        cb = cb.next
+
     values = {
         "callable": cb,
         "name": cb.__name__,
         "description": inspect.getdoc(cb),
-        "options": inspect_options(cb)
+        "options": inspect_options(cb),
+        "checks": checks
     }
     descriptions = kwargs.pop("descriptions", None)
     if descriptions:
@@ -100,6 +107,8 @@ class Command:
         self.description = kwargs["description"]
         self.options = kwargs.get("options", [])
         self.sub_commands = []
+
+        self.checks = kwargs.get("checks", [])
 
     def sub_command_group(self, _callable=None, **kwargs):
         if _callable is None:
@@ -175,6 +184,8 @@ class SubCommand:
         self.description = kwargs["description"]
         self.options = kwargs.get("options", [])
 
+        self.checks = kwargs.get("checks", [])
+
     def to_payload(self):
         return {
             "type": CommandOptionType.SUB_COMMAND,
@@ -191,6 +202,8 @@ class SubCommandGroup:
         self.description = kwargs["description"]
         self.options = kwargs.get("options", [])
         self.sub_commands = []
+
+        self.checks = kwargs.get("checks", [])
 
     def sub_command(self, _callable=None, **kwargs):
         if _callable is None:

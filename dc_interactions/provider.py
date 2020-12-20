@@ -5,6 +5,8 @@ from nacl.signing import VerifyKey
 from nacl.exceptions import BadSignatureError
 import traceback
 import sys
+import inspect
+
 from command import *
 from payloads import *
 from response import *
@@ -81,18 +83,22 @@ class InteractionProvider:
             try:
                 value = matching_option.converter(option.value)
             except Exception as e:
-                if not isinstance(e, ConverterFailed):
-                    e = ConverterFailed(e)
-
                 return await self.on_error(ctx, e)
 
             values.append(value)
 
-        # run checks
+        for check in command.checks:
+            try:
+                await check.run(ctx, *values)
+            except Exception as e:
+                return await self.on_error(ctx, e)
 
         async def _executor():
             try:
-                result = await command.callable(ctx, *values)
+                result = command.callable(ctx, *values)
+                if inspect.isawaitable(result):
+                    result = await result
+
                 if result is not None:
                     await ctx.respond_with(result)
 
