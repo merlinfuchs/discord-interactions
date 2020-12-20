@@ -3,6 +3,7 @@ import inspect
 import re
 
 from response import *
+from errors import *
 
 
 __all__ = (
@@ -31,7 +32,14 @@ def inspect_options(_callable, descriptions=None):
         if isinstance(converter, CommandOptionType):
             _type = converter
             if converter in {CommandOptionType.ROLE, CommandOptionType.CHANNEL, CommandOptionType.USER}:
-                converter = lambda v: re.match(r"[0-9]+", v)[0]
+                def snowflake_finder(v):
+                    id_match = re.match(r"[0-9]+", v)
+                    if id_match is None:
+                        raise NotASnowflake(v)
+
+                    return id_match[0]
+
+                converter = snowflake_finder
 
         elif converter == int:
             _type = CommandOptionType.INTEGER
@@ -222,6 +230,9 @@ class CommandContext:
 
     async def respond_with(self, response):
         if self.future.done():
+            if response.type in {InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE, InteractionResponseType.ACKNOWLEDGE}:
+                return  # We can't ack via webhooks; response was most likely already acked anyways
+
             return await self.provider.make_request(
                 "POST",
                 f"/webhooks/{self.provider.app_id}/{self.token}",

@@ -3,16 +3,13 @@ from aiohttp import web, ClientSession, ContentTypeError
 import asyncio
 from nacl.signing import VerifyKey
 from nacl.exceptions import BadSignatureError
-
-try:
-    from sanic import response as sanic_response
-except ModuleNotFoundError:
-    sanic_response = None
-
+import traceback
+import sys
 from command import *
 from payloads import *
 from response import *
 from utils import *
+from errors import *
 
 
 __all__ = (
@@ -67,6 +64,11 @@ class InteractionProvider:
         self.commands.append(cmd)
         return cmd
 
+    async def on_error(self, ctx, e):
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        print("Command Error:\n", tb, file=sys.stderr)
+        return InteractionResponse.acknowledge()
+
     async def execute_command(self, command, payload, remaining_options):
         ctx = CommandContext(self, command, payload)
 
@@ -74,9 +76,17 @@ class InteractionProvider:
         for option in remaining_options:
             matching_option = iterable_get(command.options, name=option.name)
             if matching_option is None:
-                return None  # Out of sync; ignore
+                return await self.on_error(ctx, OutOfSync())
 
-            values.append(matching_option.converter(option.value))
+            try:
+                value = matching_option.converter(option.value)
+            except Exception as e:
+                if not isinstance(e, ConverterFailed):
+                    e = ConverterFailed(e)
+
+                return await self.on_error(ctx, e)
+
+            values.append(value)
 
         # run checks
 
@@ -124,23 +134,22 @@ class InteractionProvider:
         return web.json_response(resp.to_dict())
 
     async def sanic_entry(self, request):
-        if not sanic_response:
-            raise ModuleNotFoundError("Sanic is not installed")
+        from sanic import response
 
         raw_data = request.body.decode("utf-8")
         signature = request.headers.get("x-signature-ed25519")
         timestamp = request.headers.get("x-signature-timestamp")
         if signature is None or timestamp is None:
-            return sanic_response.empty(status=401)
+            return response.empty(status=401)
 
         try:
             self.public_key.verify(f"{timestamp}{raw_data}".encode(), bytes.fromhex(signature))
         except BadSignatureError:
-            return sanic_response.empty(status=401)
+            return response.empty(status=401)
 
         data = InteractionPayload(json.loads(raw_data))
         resp = await self.interaction_received(data)
-        return sanic_response.json(resp.to_dict())
+        return response.json(resp.to_dict())
 
     async def make_request(self, method, path, data=None):
         # Should be replaced with an actual http client with proper ratelimiting
