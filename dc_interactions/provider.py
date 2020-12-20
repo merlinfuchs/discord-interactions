@@ -27,6 +27,7 @@ class InteractionProvider:
         self.token = kwargs["token"]
         self._loop = kwargs.get("loop")
         self.session = kwargs.get("session", ClientSession(loop=self.loop))
+        self.guild_id = kwargs.get("guild_id")  # Can be used during development to avoid the 1 hour cache
         self.app_id = None
 
     @property
@@ -155,11 +156,18 @@ class InteractionProvider:
         app = await self.make_request("GET", "/oauth2/applications/@me")
         self.app_id = app["id"]
 
+    @property
+    def _commands_endpoint(self):
+        if self.guild_id is not None:
+            return f"/applications/{self.app_id}/guilds/{self.guild_id}/commands"
+        else:
+            return f"/applications/{self.app_id}/commands"
+
     async def push_commands(self):
         for command in self.commands:
-            await self.make_request("POST", f"/applications/{self.app_id}/guilds/496683369665658880/commands", data=command.to_payload())
+            await self.make_request("POST", self._commands_endpoint, data=command.to_payload())
 
     async def flush_commands(self):
-        commands = await self.make_request("GET", f"/applications/{self.app_id}/guilds/496683369665658880/commands")
+        commands = await self.make_request("GET", self._commands_endpoint)
         for command in commands:
-            await self.make_request("DELETE", f"/applications/{self.app_id}/guilds/496683369665658880/commands/{command['id']}")
+            await self.make_request("DELETE", f"{self._commands_endpoint}/{command['id']}")
