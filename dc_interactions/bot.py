@@ -177,18 +177,22 @@ class InteractionBot:
         app = await self.make_request("GET", "/oauth2/applications/@me")
         self.app_id = app["id"]
 
-    @property
-    def _commands_endpoint(self):
-        if self.guild_id is not None:
-            return f"/applications/{self.app_id}/guilds/{self.guild_id}/commands"
+    def _commands_endpoint(self, guild_id=None):
+        guild_id = guild_id or self.guild_id
+        if guild_id is not None:
+            return f"/applications/{self.app_id}/guilds/{guild_id}/commands"
         else:
             return f"/applications/{self.app_id}/commands"
 
     async def push_commands(self):
         for command in self.commands:
-            await self.make_request("POST", self._commands_endpoint, data=command.to_payload())
+            await self.make_request(
+                "POST",
+                self._commands_endpoint(guild_id=command.guild_id),
+                data=command.to_payload()
+            )
 
     async def flush_commands(self):
-        commands = await self.make_request("GET", self._commands_endpoint)
+        commands = await self.make_request("GET", self._commands_endpoint())
         for command in commands:
-            await self.make_request("DELETE", f"{self._commands_endpoint}/{command['id']}")
+            await self.make_request("DELETE", f"{self._commands_endpoint()}/{command['id']}")

@@ -87,7 +87,8 @@ def make_command(klass, cb, **kwargs):
         "name": cb.__name__,
         "description": inspect.getdoc(cb),
         "options": inspect_options(cb),
-        "checks": checks
+        "checks": checks,
+        "guild_id": kwargs.get("guild_id")
     }
     descriptions = kwargs.pop("descriptions", None)
     if descriptions:
@@ -109,6 +110,7 @@ class Command:
         self.sub_commands = []
 
         self.checks = kwargs.get("checks", [])
+        self.guild_id = kwargs.get("guild_id")
 
     def sub_command_group(self, _callable=None, **kwargs):
         if _callable is None:
