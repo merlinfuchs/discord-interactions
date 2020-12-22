@@ -15,11 +15,11 @@ from errors import *
 
 
 __all__ = (
-    "InteractionProvider",
+    "InteractionBot",
 )
 
 
-class InteractionProvider:
+class InteractionBot:
     def __init__(self, **kwargs):
         self.commands = []
         self.public_key = VerifyKey(bytes.fromhex(kwargs["public_key"]))

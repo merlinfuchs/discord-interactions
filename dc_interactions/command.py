@@ -240,21 +240,21 @@ class CommandOptionChoice:
 
 
 class CommandContext:
-    def __init__(self, provider, command, payload):
-        self.provider = provider
+    def __init__(self, bot, command, payload):
+        self.bot = bot
         self.payload = payload
         self.command = command
 
-        self.future = provider.loop.create_future()
+        self.future = bot.loop.create_future()
 
     async def respond_with(self, response):
         if self.future.done():
             if response.type in {InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE, InteractionResponseType.ACKNOWLEDGE}:
                 return  # We can't ack via webhooks; response was most likely already acked anyways
 
-            return await self.provider.make_request(
+            return await self.bot.make_request(
                 "POST",
-                f"/webhooks/{self.provider.app_id}/{self.token}",
+                f"/webhooks/{self.bot.app_id}/{self.token}",
                 data=response.data
             )
 
@@ -274,22 +274,22 @@ class CommandContext:
         return self.respond_with(InteractionResponse.acknowledge_with_source())
 
     async def get_response(self, message_id="@original"):
-        return await self.provider.make_request(
+        return await self.bot.make_request(
             "GET",
-            f"/webhooks/{self.provider.app_id}/{self.token}/messages/{message_id}"
+            f"/webhooks/{self.bot.app_id}/{self.token}/messages/{message_id}"
         )
 
     async def edit_response(self, *args, message_id="@original", **kwargs):
-        return await self.provider.make_request(
+        return await self.bot.make_request(
             "GET",
-            f"/webhooks/{self.provider.app_id}/{self.token}/messages/{message_id}",
+            f"/webhooks/{self.bot.app_id}/{self.token}/messages/{message_id}",
             data=InteractionResponse.message(*args, **kwargs).data
         )
 
     async def delete_response(self, message_id="@original"):
-        return await self.provider.make_request(
+        return await self.bot.make_request(
             "DELETE",
-            f"/webhooks/{self.provider.app_id}/{self.token}/messages/{message_id}"
+            f"/webhooks/{self.bot.app_id}/{self.token}/messages/{message_id}"
         )
 
     @property

@@ -15,17 +15,17 @@ A simple example using aiohttp:
 
 ```py
 from aiohttp import web
-from dc_interactions import InteractionProvider
+from dc_interactions import InteractionBot
 from os import environ as env
 
-provider = InteractionProvider(
+bot = InteractionBot(
     public_key=env.get("PUBLIC_KEY"),
     token=env.get("TOKEN")
 )
 
 
 # The most simple command
-@provider.command()
+@bot.command()
 async def ping(ctx):
     """
     Ping! Pong!
@@ -34,7 +34,7 @@ async def ping(ctx):
 
 
 # Providing option descriptions
-@provider.command(
+@bot.command(
     descriptions=dict(
         to_echo="The text to echo"
     )
@@ -47,7 +47,7 @@ async def echo(ctx, to_echo):
 
 
 # Sub commands
-@provider.command()
+@bot.command()
 async def repeat(ctx):
     """
     Repeat some text
@@ -67,12 +67,12 @@ app = web.Application()
 
 
 @app.on_startup.append
-async def prepare_provider(_):
-    await provider.prepare()
-    await provider.push_commands()
+async def prepare_bot(_):
+    await bot.prepare()
+    await bot.push_commands()
 
 
-app.add_routes([web.post("/entry", provider.aiohttp_entry)])
+app.add_routes([web.post("/entry", bot.aiohttp_entry)])
 web.run_app(app)
 ```
 

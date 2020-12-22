@@ -1,6 +1,6 @@
 from command import *
 from payloads import *
-from provider import *
+from bot import *
 from response import *
 from errors import *
 from checks import *

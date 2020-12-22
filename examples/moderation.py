@@ -1,14 +1,15 @@
 from aiohttp import web
-from dc_interactions import InteractionProvider, CommandOptionType, has_permissions
+from dc_interactions import InteractionBot, CommandOptionType, has_permissions
 from os import environ as env
 
-provider = InteractionProvider(
+bot = InteractionBot(
     public_key=env.get("PUBLIC_KEY"),
     token=env.get("TOKEN"),
+    guild_id="496683369665658880"
 )
 
 
-@provider.command()
+@bot.command()
 @has_permissions(1 << 1)
 async def kick(ctx, user: CommandOptionType.USER, reason: str = "No reason provided"):
     """
@@ -18,7 +19,7 @@ async def kick(ctx, user: CommandOptionType.USER, reason: str = "No reason provi
     await ctx.respond_with_source(f"Kicked <@{user}>: `{reason}`")
 
 
-@provider.command()
+@bot.command()
 @has_permissions(1 << 2)
 async def ban(ctx, user: CommandOptionType.USER, reason: str = "No reason provided"):
     """
@@ -32,10 +33,10 @@ app = web.Application()
 
 
 @app.on_startup.append
-async def prepare_provider(_):
-    await provider.prepare()
-    await provider.push_commands()
+async def prepare_bot(_):
+    await bot.prepare()
+    await bot.push_commands()
 
 
-app.add_routes([web.post("/entry", provider.aiohttp_entry)])
+app.add_routes([web.post("/entry", bot.aiohttp_entry)])
 web.run_app(app)
