@@ -158,7 +158,7 @@ class InteractionBot:
         return response.json(resp.to_dict())
 
     async def make_request(self, method, path, data=None):
-        # Should be replaced with an actual http client with proper ratelimiting
+        # Should be overwritten with an actual http client with proper ratelimiting
         async with self.session.request(
             method=method,
             url=f"https://discord.com/api/v8{path}",

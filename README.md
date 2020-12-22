@@ -1,7 +1,9 @@
 # discord-interactions
 
 An implementation of discord interactions (slash commands to be specific) using python and asyncio.  
-Supports both aiohttp and sanic as a http server.
+Supports both aiohttp and sanic as a http server.  
+  
+Used in the most recent version of [Xenon](https://xenon.bot).
 
 # Install
 
