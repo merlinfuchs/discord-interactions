@@ -4,8 +4,7 @@ from os import environ as env
 
 bot = InteractionBot(
     public_key=env.get("PUBLIC_KEY"),
-    token=env.get("TOKEN"),
-    guild_id="496683369665658880"
+    token=env.get("TOKEN")
 )
 
 
