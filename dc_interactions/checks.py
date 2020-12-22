@@ -1,5 +1,6 @@
-from errors import *
 import inspect
+
+from .errors import *
 
 
 __all__ = (

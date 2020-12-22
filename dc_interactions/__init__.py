@@ -1,9 +1,10 @@
-from command import *
-from payloads import *
-from bot import *
-from response import *
-from errors import *
-from checks import *
+from .command import *
+from .payloads import *
+from .bot import *
+from .response import *
+from .errors import *
+from .checks import *
+from .module import *
 
 __title__ = "dc_interactions"
 __version__ = "0.0.1-pre"

@@ -7,11 +7,11 @@ import traceback
 import sys
 import inspect
 
-from command import *
-from payloads import *
-from response import *
-from utils import *
-from errors import *
+from .command import *
+from .payloads import *
+from .response import *
+from .utils import *
+from .errors import *
 
 
 __all__ = (
@@ -62,9 +62,11 @@ class InteractionBot:
 
             return _predicate
 
-        cmd = Command(callable=_callable, **kwargs)
-        self.commands.append(cmd)
-        return cmd
+        return make_command(Command, _callable, **kwargs)
+
+    def load_module(self, module):
+        for cmd in module.commands:
+            self.commands.append(cmd)
 
     async def on_error(self, ctx, e):
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))

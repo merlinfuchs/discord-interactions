@@ -1,10 +1,11 @@
 from enum import IntEnum
 import inspect
 import re
+import types
 
-from response import *
-from errors import *
-from checks import *
+from .response import *
+from .errors import *
+from .checks import *
 
 
 __all__ = (
@@ -21,12 +22,11 @@ __all__ = (
 
 def inspect_options(_callable, descriptions=None):
     descriptions = descriptions or {}
-    skip = 1  # Skip ctx
-    if inspect.ismethod(_callable):
-        skip += 1  # Skip self
-
     options = []
-    for p in list(inspect.signature(_callable).parameters.values())[skip:]:
+    for p in list(inspect.signature(_callable).parameters.values()):
+        if p.name in {"self", "ctx"}:
+            continue
+
         converter = p.annotation if p.annotation != inspect.Parameter.empty else str
         _type = CommandOptionType.STRING
         choices = []
@@ -112,6 +112,11 @@ class Command:
         self.checks = kwargs.get("checks", [])
         self.guild_id = kwargs.get("guild_id")
 
+    def bind(self, obj):
+        self.callable = types.MethodType(self.callable, obj)
+        for sub_command in self.sub_commands:
+            sub_command.bind(obj)
+
     def sub_command_group(self, _callable=None, **kwargs):
         if _callable is None:
             def _predicate(_callable):
@@ -188,6 +193,9 @@ class SubCommand:
 
         self.checks = kwargs.get("checks", [])
 
+    def bind(self, obj):
+        self.callable = types.MethodType(self.callable, obj)
+
     def to_payload(self):
         return {
             "type": CommandOptionType.SUB_COMMAND,
@@ -206,6 +214,11 @@ class SubCommandGroup:
         self.sub_commands = []
 
         self.checks = kwargs.get("checks", [])
+
+    def bind(self, obj):
+        self.callable = types.MethodType(self.callable, obj)
+        for sub_command in self.sub_commands:
+            sub_command.bind(obj)
 
     def sub_command(self, _callable=None, **kwargs):
         if _callable is None:
