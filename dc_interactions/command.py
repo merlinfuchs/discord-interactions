@@ -20,8 +20,8 @@ __all__ = (
 )
 
 
-def inspect_options(_callable, descriptions=None):
-    descriptions = descriptions or {}
+def inspect_options(_callable, extends=None):
+    extends = extends or {}
     options = []
     for p in list(inspect.signature(_callable).parameters.values()):
         if p.name in {"self", "ctx"}:
@@ -29,7 +29,6 @@ def inspect_options(_callable, descriptions=None):
 
         converter = p.annotation if p.annotation != inspect.Parameter.empty else str
         _type = CommandOptionType.STRING
-        choices = []
         if isinstance(converter, CommandOptionType):
             _type = converter
             if converter in {CommandOptionType.ROLE, CommandOptionType.CHANNEL, CommandOptionType.USER}:
@@ -54,22 +53,17 @@ def inspect_options(_callable, descriptions=None):
         elif converter == bool:
             _type = CommandOptionType.BOOLEAN
 
-        elif isinstance(converter, tuple) or isinstance(converter, list):
-            for choice in converter:
-                choices.append(CommandOptionChoice(name="placeholder", value=choice))
-
-            converter = str
-
         # elif inspect.isclass(converter) and issubclass(converter, Converter):
         #     _type = converter.type
 
+        extend = extends.get(p.name, {})
         options.append(CommandOption(
             type=_type,
             name=p.name,
-            description=descriptions.get(p.name, "No description"),
+            description=extend.get("description", "No description"),
             # default=False,
             required=p.default == inspect.Parameter.empty,
-            choices=choices,
+            choices=[CommandOptionChoice(*o) for o in extend.get("choices", [])],
             converter=converter
         ))
 
@@ -86,16 +80,10 @@ def make_command(klass, cb, **kwargs):
         "callable": cb,
         "name": cb.__name__,
         "description": inspect.getdoc(cb),
-        "options": inspect_options(cb),
+        "options": inspect_options(cb, extends=kwargs.get("extends")),
         "checks": checks,
         "guild_id": kwargs.get("guild_id")
     }
-    descriptions = kwargs.pop("descriptions", None)
-    if descriptions:
-        for option in values["options"]:
-            description = descriptions.get(option.name)
-            if description:
-                option.description = description
 
     values.update(kwargs)
     return klass(**values)
@@ -285,8 +273,14 @@ class CommandContext:
     def acknowledge(self):
         return self.respond_with(InteractionResponse.acknowledge())
 
+    def ack(self):
+        return self.acknowledge()
+
     def acknowledge_with_source(self):
         return self.respond_with(InteractionResponse.acknowledge_with_source())
+
+    def ack_with_source(self):
+        return self.acknowledge_with_source()
 
     async def get_response(self, message_id="@original"):
         return await self.bot.make_request(
@@ -296,7 +290,7 @@ class CommandContext:
 
     async def edit_response(self, *args, message_id="@original", **kwargs):
         return await self.bot.make_request(
-            "GET",
+            "PATCH",
             f"/webhooks/{self.bot.app_id}/{self.token}/messages/{message_id}",
             data=InteractionResponse.message(*args, **kwargs).data
         )

@@ -5,14 +5,13 @@ from .errors import *
 
 __all__ = (
     "Check",
-    "has_permissions"
 )
 
 
 class Check:
-    def __init__(self, callable):
+    def __init__(self, callable, next=None):
         self.callable = callable
-        self.next = None
+        self.next = next
 
     def __call__(self, next):
         self.next = next
@@ -24,15 +23,3 @@ class Check:
             result = await result
 
         return result
-
-
-def has_permissions(value: int):
-    @Check
-    async def _check(ctx, *_):
-        permissions = int(ctx.member["permissions"])
-        if (permissions & value) != value and (permissions & 8) != 8:
-            raise MissingPermissions(value)
-
-        return True
-
-    return _check

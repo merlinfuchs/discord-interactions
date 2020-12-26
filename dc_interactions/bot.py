@@ -6,6 +6,7 @@ from nacl.exceptions import BadSignatureError
 import traceback
 import sys
 import inspect
+import weakref
 
 from .command import *
 from .payloads import *
@@ -28,6 +29,9 @@ class InteractionBot:
         self.session = kwargs.get("session", ClientSession(loop=self.loop))
         self.guild_id = kwargs.get("guild_id")  # Can be used during development to avoid the 1 hour cache
         self.app_id = None
+        self.ctx_klass = kwargs.get("ctx_klass", CommandContext)
+
+        self.listeners = {}
 
     @property
     def loop(self):
@@ -64,36 +68,94 @@ class InteractionBot:
 
         return make_command(Command, _callable, **kwargs)
 
+    def dispatch(self, event, *args, **kwargs):
+        listeners = self.listeners.get(event)
+        if listeners is not None:
+            for callable in listeners:
+                if isinstance(callable, asyncio.Future):
+                    if not callable.done():
+                        if len(args) == 1:
+                            callable.set_result(args[0])
+
+                        else:
+                            callable.set_result(tuple([*args]))
+
+                else:
+                    try:
+                        res = callable(*args, **kwargs)
+                        if inspect.isawaitable(res):
+                            self.loop.create_task(res)
+                    except:
+                        traceback.print_exc()
+
+    def add_listener(self, event, callable):
+        if event in self.listeners:
+            self.listeners[event].add(callable)
+
+        else:
+            self.listeners[event] = weakref.WeakSet([callable])
+
+    def listener(self, _callable=None, name=None):
+        if _callable is None:
+            def _predicate(_callable):
+                self.add_listener(name or _callable.__name__[3:], _callable)
+                return _callable
+
+            return _predicate
+
+        self.add_listener(name or _callable.__name__[3:], _callable)
+        return _callable
+
+    async def wait_for(self, event, check=None, timeout=None):
+        if check is None:
+            check = lambda *d: True
+
+        async def _inner():
+            while True:
+                future = self.loop.create_future()
+                self.add_listener(event, future)
+                result = await future
+                if check(result):
+                    return result
+
+        return await asyncio.wait_for(_inner(), timeout=timeout)
+
     def load_module(self, module):
         for cmd in module.commands:
             self.commands.append(cmd)
 
-    async def on_error(self, ctx, e):
+    async def on_command_error(self, ctx, e):
+        if isinstance(e, asyncio.CancelledError):
+            raise e
+
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         print("Command Error:\n", tb, file=sys.stderr)
         return InteractionResponse.acknowledge()
 
     async def execute_command(self, command, payload, remaining_options):
-        ctx = CommandContext(self, command, payload)
+        ctx = self.ctx_klass(self, command, payload)
 
         values = []
         for option in remaining_options:
             matching_option = iterable_get(command.options, name=option.name)
             if matching_option is None:
-                return await self.on_error(ctx, OutOfSync())
+                return await self.on_command_error(ctx, OutOfSync())
 
             try:
                 value = matching_option.converter(option.value)
             except Exception as e:
-                return await self.on_error(ctx, e)
+                return await self.on_command_error(ctx, e)
 
             values.append(value)
 
         for check in command.checks:
             try:
-                await check.run(ctx, *values)
+                res = await check.run(ctx, *values)
+                if isinstance(res, InteractionResponse):
+                    return res
+
             except Exception as e:
-                return await self.on_error(ctx, e)
+                return await self.on_command_error(ctx, e)
 
         async def _executor():
             try:
@@ -105,14 +167,22 @@ class InteractionBot:
                     await ctx.respond_with(result)
 
             except Exception as e:
-                ctx.future.set_exception(e)
+                if not ctx.future.done():
+                    ctx.future.set_exception(e)
+
+                else:
+                    return await self.on_command_error(ctx, e)
 
         self.loop.create_task(_executor())
 
         try:
-            return await ctx.future
+            return await asyncio.wait_for(ctx.future, timeout=15)
+        except asyncio.TimeoutError:
+            if not ctx.future.done():
+                ctx.future.set_result(None)
+            return InteractionResponse.acknowledge()
         except Exception as e:
-            return await self.on_error(ctx, e)
+            return await self.on_command_error(ctx, e)
 
     async def interaction_received(self, payload):
         if payload.type == InteractionType.PING:
@@ -159,17 +229,20 @@ class InteractionBot:
         resp = await self.interaction_received(data)
         return response.json(resp.to_dict())
 
-    async def make_request(self, method, path, data=None):
+    async def make_request(self, method, path, data=None, **params):
         # Should be overwritten with an actual http client with proper ratelimiting
         async with self.session.request(
             method=method,
-            url=f"https://discord.com/api/v8{path}",
+            url=f"https://discord.com/api/v8{path.format(**params)}",
             json=data,
             headers={
                 "Authorization": f"Bot {self.token}"
             }
         ) as resp:
-            resp.raise_for_status()
+            if resp.status < 200 or resp.status > 299:
+                print(await resp.text())
+                resp.raise_for_status()
+
             try:
                 return await resp.json()
             except ContentTypeError:
@@ -180,21 +253,23 @@ class InteractionBot:
         self.app_id = app["id"]
 
     def _commands_endpoint(self, guild_id=None):
-        guild_id = guild_id or self.guild_id
-        if guild_id is not None:
-            return f"/applications/{self.app_id}/guilds/{guild_id}/commands"
+        if guild_id is not None or self.guild_id is not None:
+            return "/applications/{app_id}/guilds/{guild_id}/commands"
         else:
-            return f"/applications/{self.app_id}/commands"
+            return "/applications/{app_id}/commands"
 
     async def push_commands(self):
         for command in self.commands:
             await self.make_request(
                 "POST",
                 self._commands_endpoint(guild_id=command.guild_id),
-                data=command.to_payload()
+                data=command.to_payload(),
+                app_id=self.app_id,
+                guild_id=command.guild_id or self.guild_id
             )
 
     async def flush_commands(self):
-        commands = await self.make_request("GET", self._commands_endpoint())
+        commands = await self.make_request("GET", self._commands_endpoint(), guild_id=self.guild_id, app_id=self.app_id)
         for command in commands:
-            await self.make_request("DELETE", f"{self._commands_endpoint()}/{command['id']}")
+            await self.make_request("DELETE", "%s/{command_id}" % self._commands_endpoint(),
+                                    command_id=command['id'], guild_id=self.guild_id, app_id=self.app_id)

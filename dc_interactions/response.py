@@ -20,6 +20,8 @@ class InteractionResponse:
         self.type = type
         self.data = kwargs
         self.data["content"] = content
+        if kwargs.get("ephemeral"):
+            self.data["flags"] = 1 << 6
 
     @classmethod
     def pong(cls):
@@ -27,6 +29,10 @@ class InteractionResponse:
 
     @classmethod
     def acknowledge(cls):
+        return cls(InteractionResponseType.ACKNOWLEDGE)
+
+    @classmethod
+    def ack(cls):
         return cls(InteractionResponseType.ACKNOWLEDGE)
 
     @classmethod
@@ -41,7 +47,14 @@ class InteractionResponse:
     def acknowledge_with_source(cls):
         return cls(InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE)
 
+    @classmethod
+    def ack_with_source(cls):
+        return cls(InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE)
+
     def to_dict(self):
+        if self.type in {InteractionResponseType.ACKNOWLEDGE, InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE}:
+            return {"type": self.type.value}
+
         return {
             "type": self.type.value,
             "data": self.data
