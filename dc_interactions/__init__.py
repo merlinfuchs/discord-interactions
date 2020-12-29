@@ -5,6 +5,7 @@ from .response import *
 from .errors import *
 from .checks import *
 from .module import *
+from .utils import *
 
 __title__ = "dc_interactions"
 __version__ = "0.0.1-pre"

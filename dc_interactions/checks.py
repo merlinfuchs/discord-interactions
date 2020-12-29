@@ -17,8 +17,8 @@ class Check:
         self.next = next
         return self
 
-    async def run(self, ctx, *args):
-        result = self.callable(ctx, *args)
+    async def run(self, ctx, **kwargs):
+        result = self.callable(ctx, **kwargs)
         if inspect.isawaitable(result):
             result = await result
 

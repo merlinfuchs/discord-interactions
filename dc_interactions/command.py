@@ -7,7 +7,6 @@ from .response import *
 from .errors import *
 from .checks import *
 
-
 __all__ = (
     "make_command",
     "Command",
@@ -76,13 +75,14 @@ def make_command(klass, cb, **kwargs):
         checks.append(cb)
         cb = cb.next
 
+    doc_lines = inspect.cleandoc(inspect.getdoc(cb)).splitlines()
     values = {
         "callable": cb,
         "name": cb.__name__,
-        "description": inspect.getdoc(cb),
+        "description": doc_lines[0],
+        "long_description": "\n".join(doc_lines),
         "options": inspect_options(cb, extends=kwargs.get("extends")),
-        "checks": checks,
-        "guild_id": kwargs.get("guild_id")
+        "checks": checks
     }
 
     values.update(kwargs)
@@ -94,11 +94,18 @@ class Command:
         self.callable = kwargs.get("callable")
         self.name = kwargs["name"]
         self.description = kwargs["description"]
+        self.long_description = kwargs.get("long_description")
         self.options = kwargs.get("options", [])
         self.sub_commands = []
 
+        self.hidden = kwargs.get("hidden")
         self.checks = kwargs.get("checks", [])
         self.guild_id = kwargs.get("guild_id")
+        self.register = kwargs.get("register", True)
+
+    @property
+    def full_name(self):
+        return self.name
 
     def bind(self, obj):
         self.callable = types.MethodType(self.callable, obj)
@@ -109,12 +116,14 @@ class Command:
         if _callable is None:
             def _predicate(_callable):
                 cmd = make_command(SubCommandGroup, _callable, **kwargs)
+                cmd.parent = self
                 self.sub_commands.append(cmd)
                 return cmd
 
             return _predicate
 
         cmd = make_command(SubCommandGroup, _callable, **kwargs)
+        cmd.parent = self
         self.sub_commands.append(cmd)
         return cmd
 
@@ -122,12 +131,14 @@ class Command:
         if _callable is None:
             def _predicate(_callable):
                 cmd = make_command(SubCommand, _callable, **kwargs)
+                cmd.parent = self
                 self.sub_commands.append(cmd)
                 return cmd
 
             return _predicate
 
         cmd = make_command(SubCommand, _callable, **kwargs)
+        cmd.parent = self
         self.sub_commands.append(cmd)
         return cmd
 
@@ -177,9 +188,16 @@ class SubCommand:
         self.callable = kwargs.get("callable")
         self.name = kwargs["name"]
         self.description = kwargs["description"]
+        self.long_description = kwargs.get("long_description")
         self.options = kwargs.get("options", [])
 
+        self.hidden = kwargs.get("hidden")
+        self.parent = kwargs.get("parent")
         self.checks = kwargs.get("checks", [])
+
+    @property
+    def full_name(self):
+        return f"{self.parent.full_name} {self.name}"
 
     def bind(self, obj):
         self.callable = types.MethodType(self.callable, obj)
@@ -198,10 +216,17 @@ class SubCommandGroup:
         self.callable = kwargs.get("callable")
         self.name = kwargs["name"]
         self.description = kwargs["description"]
+        self.long_description = kwargs.get("long_description")
         self.options = kwargs.get("options", [])
         self.sub_commands = []
 
+        self.hidden = kwargs.get("hidden")
+        self.parent = kwargs.get("parent")
         self.checks = kwargs.get("checks", [])
+
+    @property
+    def full_name(self):
+        return f"{self.parent.full_name} {self.name}"
 
     def bind(self, obj):
         self.callable = types.MethodType(self.callable, obj)
@@ -212,12 +237,14 @@ class SubCommandGroup:
         if _callable is None:
             def _predicate(_callable):
                 cmd = make_command(SubCommand, _callable, **kwargs)
+                cmd.parent = self
                 self.sub_commands.append(cmd)
                 return cmd
 
             return _predicate
 
         cmd = make_command(SubCommand, _callable, **kwargs)
+        cmd.parent = self
         self.sub_commands.append(cmd)
         return cmd
 
@@ -252,7 +279,10 @@ class CommandContext:
 
     async def respond_with(self, response):
         if self.future.done():
-            if response.type in {InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE, InteractionResponseType.ACKNOWLEDGE}:
+            if response.type in {
+                InteractionResponseType.ACKNOWLEDGE_WITH_SOURCE,
+                InteractionResponseType.ACKNOWLEDGE
+            }:
                 return  # We can't ack via webhooks; response was most likely already acked anyways
 
             return await self.bot.make_request(

@@ -14,7 +14,6 @@ from .response import *
 from .utils import *
 from .errors import *
 
-
 __all__ = (
     "InteractionBot",
 )
@@ -71,7 +70,15 @@ class InteractionBot:
     def dispatch(self, event, *args, **kwargs):
         listeners = self.listeners.get(event)
         if listeners is not None:
-            for callable in listeners:
+            for callable, check in listeners:
+                try:
+                    print(check(*args, **kwargs))
+                    if check is not None and not check(*args, **kwargs):
+                        continue
+                except:
+                    traceback.print_exc()
+                    continue
+
                 if isinstance(callable, asyncio.Future):
                     if not callable.done():
                         if len(args) == 1:
@@ -88,12 +95,15 @@ class InteractionBot:
                     except:
                         traceback.print_exc()
 
-    def add_listener(self, event, callable):
+    def add_listener(self, event, callable, check=None):
         if event in self.listeners:
-            self.listeners[event].add(callable)
+            self.listeners[event].add((callable, check))
 
         else:
-            self.listeners[event] = weakref.WeakSet([callable])
+            self.listeners[event] = {(callable, check)}
+
+    def remove_listener(self, event, callable, check=None):
+        self.listeners[event].remove((callable, check))
 
     def listener(self, _callable=None, name=None):
         if _callable is None:
@@ -107,18 +117,12 @@ class InteractionBot:
         return _callable
 
     async def wait_for(self, event, check=None, timeout=None):
-        if check is None:
-            check = lambda *d: True
-
-        async def _inner():
-            while True:
-                future = self.loop.create_future()
-                self.add_listener(event, future)
-                result = await future
-                if check(result):
-                    return result
-
-        return await asyncio.wait_for(_inner(), timeout=timeout)
+        future = self.loop.create_future()
+        try:
+            self.add_listener(event, future, check=check)
+            return await asyncio.wait_for(future, timeout=timeout)
+        finally:
+            self.remove_listener(event, future, check=check)
 
     def load_module(self, module):
         for cmd in module.commands:
@@ -130,36 +134,25 @@ class InteractionBot:
 
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         print("Command Error:\n", tb, file=sys.stderr)
-        return InteractionResponse.acknowledge()
+        await ctx.acknowledge()
 
     async def execute_command(self, command, payload, remaining_options):
         ctx = self.ctx_klass(self, command, payload)
 
-        values = []
-        for option in remaining_options:
-            matching_option = iterable_get(command.options, name=option.name)
-            if matching_option is None:
-                return await self.on_command_error(ctx, OutOfSync())
-
-            try:
-                value = matching_option.converter(option.value)
-            except Exception as e:
-                return await self.on_command_error(ctx, e)
-
-            values.append(value)
-
-        for check in command.checks:
-            try:
-                res = await check.run(ctx, *values)
-                if isinstance(res, InteractionResponse):
-                    return res
-
-            except Exception as e:
-                return await self.on_command_error(ctx, e)
-
         async def _executor():
             try:
-                result = command.callable(ctx, *values)
+                values = {}
+                for option in remaining_options:
+                    matching_option = iterable_get(command.options, name=option.name)
+                    value = matching_option.converter(option.value)
+                    values[option.name] = value
+
+                for check in command.checks:
+                    res = await check.run(ctx, **values)
+                    if res is not True:
+                        return
+
+                result = command.callable(ctx, **values)
                 if inspect.isawaitable(result):
                     result = await result
 
@@ -167,16 +160,12 @@ class InteractionBot:
                     await ctx.respond_with(result)
 
             except Exception as e:
-                if not ctx.future.done():
-                    ctx.future.set_exception(e)
-
-                else:
-                    return await self.on_command_error(ctx, e)
+                await self.on_command_error(ctx, e)
 
         self.loop.create_task(_executor())
 
         try:
-            return await asyncio.wait_for(ctx.future, timeout=15)
+            return await asyncio.wait_for(ctx.future, timeout=5)
         except asyncio.TimeoutError:
             if not ctx.future.done():
                 ctx.future.set_result(None)
@@ -232,12 +221,12 @@ class InteractionBot:
     async def make_request(self, method, path, data=None, **params):
         # Should be overwritten with an actual http client with proper ratelimiting
         async with self.session.request(
-            method=method,
-            url=f"https://discord.com/api/v8{path.format(**params)}",
-            json=data,
-            headers={
-                "Authorization": f"Bot {self.token}"
-            }
+                method=method,
+                url=f"https://discord.com/api/v8{path.format(**params)}",
+                json=data,
+                headers={
+                    "Authorization": f"Bot {self.token}"
+                }
         ) as resp:
             if resp.status < 200 or resp.status > 299:
                 print(await resp.text())
@@ -258,18 +247,35 @@ class InteractionBot:
         else:
             return "/applications/{app_id}/commands"
 
+    async def create_command(self, command, guild_id=None):
+        guild_id = guild_id or command.guild_id or self.guild_id
+        await self.make_request(
+            "POST",
+            self._commands_endpoint(guild_id=guild_id),
+            data=command.to_payload(),
+            app_id=self.app_id,
+            guild_id=guild_id
+        )
+
     async def push_commands(self):
         for command in self.commands:
-            await self.make_request(
-                "POST",
-                self._commands_endpoint(guild_id=command.guild_id),
-                data=command.to_payload(),
-                app_id=self.app_id,
-                guild_id=command.guild_id or self.guild_id
-            )
+            if not command.register:
+                continue
+
+            await self.create_command(command)
+
+    async def fetch_commands(self, guild_id=None):
+        guild_id = guild_id or self.guild_id
+        return await self.make_request("GET", self._commands_endpoint(guild_id=guild_id),
+                                       guild_id=guild_id, app_id=self.app_id)
+
+    async def delete_command(self, command_id, guild_id=None):
+        guild_id = guild_id or self.guild_id
+        await self.make_request("DELETE", "%s/{command_id}" % self._commands_endpoint(guild_id=guild_id),
+                                guild_id=guild_id, app_id=self.app_id, command_id=command_id)
 
     async def flush_commands(self):
-        commands = await self.make_request("GET", self._commands_endpoint(), guild_id=self.guild_id, app_id=self.app_id)
+        commands = await self.fetch_commands()
         for command in commands:
-            await self.make_request("DELETE", "%s/{command_id}" % self._commands_endpoint(),
-                                    command_id=command['id'], guild_id=self.guild_id, app_id=self.app_id)
+            print(command["name"])
+            await self.delete_command(command["id"])
