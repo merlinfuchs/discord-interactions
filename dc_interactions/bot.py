@@ -72,7 +72,6 @@ class InteractionBot:
         if listeners is not None:
             for callable, check in listeners:
                 try:
-                    print(check(*args, **kwargs))
                     if check is not None and not check(*args, **kwargs):
                         continue
                 except:
@@ -277,5 +276,4 @@ class InteractionBot:
     async def flush_commands(self):
         commands = await self.fetch_commands()
         for command in commands:
-            print(command["name"])
             await self.delete_command(command["id"])
