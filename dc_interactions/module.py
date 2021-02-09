@@ -1,4 +1,5 @@
 from .command import *
+from .task import *
 
 
 __all__ = (
@@ -11,11 +12,16 @@ class Module:
         self.bot = bot
 
         self.commands = []
+        self.tasks = []
         for name in dir(self):
             attr = getattr(self, name)
             if isinstance(attr, Command):
                 attr.bind(self)
                 self.commands.append(attr)
+
+            elif isinstance(attr, Task):
+                attr.bind(self)
+                self.tasks.append(attr)
 
     @staticmethod
     def command(_callable=None, **kwargs):
@@ -26,3 +32,10 @@ class Module:
             return _predicate
 
         return make_command(Command, _callable, **kwargs)
+
+    @staticmethod
+    def task(**td):
+        def _predicate(_callable):
+            return Task(_callable, **td)
+
+        return _predicate

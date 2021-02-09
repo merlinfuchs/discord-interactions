@@ -2,6 +2,7 @@ from enum import IntEnum
 import inspect
 import re
 import types
+import json
 
 from .response import *
 from .errors import *
@@ -56,6 +57,9 @@ def inspect_options(_callable, extends=None):
         #     _type = converter.type
 
         extend = extends.get(p.name, {})
+        if type(extend) == str:
+            extend = {"description": extend}
+
         options.append(CommandOption(
             type=_type,
             name=p.name,
@@ -288,7 +292,8 @@ class CommandContext:
             return await self.bot.make_request(
                 "POST",
                 f"/webhooks/{self.bot.app_id}/{self.token}",
-                data=response.data
+                data=response.data,
+                files=response.files if len(response.files) > 0 else None
             )
 
         else:
@@ -354,3 +359,7 @@ class CommandContext:
     @property
     def member(self):
         return self.payload.member
+
+    @property
+    def resolved(self):
+        return self.payload.resolved

@@ -12,7 +12,7 @@ from .command import *
 from .payloads import *
 from .response import *
 from .utils import *
-from .errors import *
+from .task import *
 
 __all__ = (
     "InteractionBot",
@@ -22,6 +22,7 @@ __all__ = (
 class InteractionBot:
     def __init__(self, **kwargs):
         self.commands = []
+        self.tasks = []
         self.public_key = VerifyKey(bytes.fromhex(kwargs["public_key"]))
         self.token = kwargs["token"]
         self._loop = kwargs.get("loop")
@@ -66,6 +67,14 @@ class InteractionBot:
             return _predicate
 
         return make_command(Command, _callable, **kwargs)
+
+    def task(self, **td):
+        def _predicate(_callable):
+            t = Task(_callable, **td)
+            self.tasks.append(t)
+            return t
+
+        return _predicate
 
     def dispatch(self, event, *args, **kwargs):
         listeners = self.listeners.get(event)
@@ -126,6 +135,9 @@ class InteractionBot:
     def load_module(self, module):
         for cmd in module.commands:
             self.commands.append(cmd)
+
+        for t in module.tasks:
+            self.tasks.append(t)
 
     async def on_command_error(self, ctx, e):
         if isinstance(e, asyncio.CancelledError):
@@ -217,7 +229,7 @@ class InteractionBot:
         resp = await self.interaction_received(data)
         return response.json(resp.to_dict())
 
-    async def make_request(self, method, path, data=None, **params):
+    async def make_request(self, method, path, data=None, files=None, **params):
         # Should be overwritten with an actual http client with proper ratelimiting
         async with self.session.request(
                 method=method,
@@ -239,6 +251,8 @@ class InteractionBot:
     async def prepare(self):
         app = await self.make_request("GET", "/oauth2/applications/@me")
         self.app_id = app["id"]
+        for t in self.tasks:
+            self.loop.create_task(t.run())
 
     def _commands_endpoint(self, guild_id=None):
         if guild_id is not None or self.guild_id is not None:
@@ -256,12 +270,21 @@ class InteractionBot:
             guild_id=guild_id
         )
 
-    async def push_commands(self):
-        for command in self.commands:
-            if not command.register:
-                continue
+    async def create_commands(self, commands, guild_id=None):
+        if len(commands) == 0:
+            return
 
-            await self.create_command(command)
+        guild_id = guild_id or commands[0].guild_id or self.guild_id
+        await self.make_request(
+            "PUT",
+            self._commands_endpoint(guild_id=guild_id),
+            data=[c.to_payload() for c in commands],
+            app_id=self.app_id,
+            guild_id=guild_id
+        )
+
+    async def push_commands(self):
+        return await self.create_commands([c for c in self.commands if c.register])
 
     async def fetch_commands(self, guild_id=None):
         guild_id = guild_id or self.guild_id

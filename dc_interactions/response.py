@@ -18,6 +18,7 @@ class InteractionResponseType(IntEnum):
 class InteractionResponse:
     def __init__(self, type, content=None, **kwargs):
         self.type = type
+        self.files = kwargs.pop("files", [])
         self.data = kwargs
         self.data["content"] = content
         if kwargs.get("ephemeral"):
